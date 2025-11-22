@@ -9,3 +9,4 @@ screenshots
 debug
 wandb
 data
+__pycache__/
