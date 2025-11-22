@@ -1,4 +1,6 @@
+numpy==1.26
 open3d==0.18.0
+faiss-gpu==1.7.2
 wandb
 trimesh
 pytorch_msssim
