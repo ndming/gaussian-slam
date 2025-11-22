@@ -1,5 +1,5 @@
 inherit_from: configs/Replica/replica.yaml
 data:
-  scene_name: office4
-  input_path: data/Replica-SLAM/Replica/office4/
-  output_path: output/Replica/office4/
+  scene_name: office_4
+  input_path: /home/minhnd59/datasets/replica-slam/office4/
+  output_path: output/replica/office_4/
