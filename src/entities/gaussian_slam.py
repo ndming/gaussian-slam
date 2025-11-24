@@ -3,12 +3,11 @@
 """
 import os
 import pprint
+import torch
+
 from argparse import ArgumentParser
 from datetime import datetime
 from pathlib import Path
-
-import numpy as np
-import torch
 
 from src.entities.arguments import OptimizationParams
 from src.entities.datasets import get_dataset
@@ -24,7 +23,7 @@ from src.utils.vis_utils import *  # noqa - needed for debugging
 
 class GaussianSLAM(object):
 
-    def __init__(self, config: dict) -> None:
+    def __init__(self, config: dict, queue=None) -> None:
 
         self._setup_output_path(config)
         self.device = "cuda"
@@ -55,7 +54,7 @@ class GaussianSLAM(object):
             self.new_submap_frame_ids.pop(0)
 
         self.logger = Logger(self.output_path, config["use_wandb"])
-        self.mapper = Mapper(config["mapping"], self.dataset, self.logger)
+        self.mapper = Mapper(config["mapping"], self.dataset, self.logger, queue=queue)
         self.tracker = Tracker(config["tracking"], self.dataset, self.logger)
 
         print('Tracking config')
@@ -110,10 +109,11 @@ class GaussianSLAM(object):
             "gaussian_params": gaussian_params,
             "submap_keyframes": sorted(list(self.keyframes_info.keys()))
         }
-        save_dict_to_ckpt(
-            submap_ckpt, f"{submap_ckpt_name}.ckpt", directory=self.output_path / "submaps")
-        gaussian_model = GaussianModel(0)
+        save_dict_to_ckpt(submap_ckpt, f"{submap_ckpt_name}.ckpt", directory=self.output_path / "submaps")
+
+        gaussian_model = GaussianModel(self.config['mapping']['max_sh_degree'])
         gaussian_model.training_setup(self.opt)
+
         self.mapper.keyframes = []
         self.keyframes_info = {}
         if self.submap_using_motion_heuristic:
@@ -124,8 +124,8 @@ class GaussianSLAM(object):
 
     def run(self) -> None:
         """ Starts the main program flow for Gaussian-SLAM, including tracking and mapping. """
-        setup_seed(self.config["seed"])
-        gaussian_model = GaussianModel(0)
+        # setup_seed(self.config["seed"])
+        gaussian_model = GaussianModel(self.config['mapping']['max_sh_degree'])
         gaussian_model.training_setup(self.opt)
         self.submap_id = 0
 

@@ -33,7 +33,7 @@ class GaussianViewer(Viewer):
         mode: Literal["rendering", "training"] = "rendering",
     ):
         super().__init__(server, render_fn, output_dir, mode)
-        server.gui.set_panel_label("Gaussian Viewer")
+        server.gui.set_panel_label("SLAM Point Cloud")
 
     
     def _init_rendering_tab(self):
@@ -44,7 +44,7 @@ class GaussianViewer(Viewer):
     def _populate_rendering_tab(self):
         server = self.server
         with self._rendering_folder:
-            with server.gui.add_folder("Gaussian Scene"):
+            with server.gui.add_folder("Gaussian Rasterization"):
                 total_gaussian_count_number = server.gui.add_number(
                     "Total",
                     initial_value=self.render_tab_state.total_gaussian_count,

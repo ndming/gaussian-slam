@@ -1,6 +1,9 @@
+import threading
+import time
 import torch
 import viser
-import time
+
+import numpy as np
 import torch.nn.functional as F
 
 from argparse import ArgumentParser
@@ -8,7 +11,7 @@ from pathlib import Path
 
 from gsplat.rendering import rasterization
 from nerfview import CameraState, RenderTabState, apply_float_colormap
-from splat_viewer import GaussianViewer, GaussianRenderTabState
+from src.entities.viewer import GaussianViewer, GaussianRenderTabState
 
 RENDER_MODE_MAP = {
     "rgb": "RGB",
@@ -17,17 +20,39 @@ RENDER_MODE_MAP = {
     "alpha": "RGB",
 }
 
-def main(args, data):
-    means = data['xyz'].to("cuda")
-    quats = F.normalize(data['rotation'].to("cuda"), p=2, dim=-1)
-    scales = torch.exp(data['scaling'].to("cuda"))
-    opacities = torch.sigmoid(data['opacity'].squeeze(-1).to("cuda"))
-    colors = data['features_dc'].to("cuda")
+class GaussianState:
+    def __init__(self):
+        self.means = None
+        self.quats = None
+        self.scales = None
+        self.opacities = None
+        self.colors = None
+
+    def update(self, snapshot):
+        self.means = snapshot["means"].to("cuda")   # (N, 3)
+        self.quats = snapshot["quats"].to("cuda")   # (N, 4)
+        self.scales = snapshot["scales"].to("cuda") # (N, 3)
+        self.opacities = snapshot["opacities"].squeeze(-1).to("cuda") # (N,)
+        self.colors = snapshot["colors"].to("cuda") # (N, S, 3)
+
+    def valid(self):
+        return self.means is not None
+
+def vis_slam(port, queue, ckpt=None):
+    gaussians = GaussianState()
     sh_degree = 0
+
+    if ckpt is not None:
+        gaussians.means = ckpt['xyz']
+        gaussians.quats = F.normalize(ckpt['rotation'], p=2, dim=-1)
+        gaussians.scales = torch.exp(ckpt['scaling'])
+        gaussians.opacities = torch.sigmoid(ckpt['opacity'].squeeze(-1))
+        gaussians.colors = ckpt['features_dc']
 
     @torch.no_grad()
     def viewer_render_fn(camera_state: CameraState, render_tab_state: RenderTabState):
         assert isinstance(render_tab_state, GaussianRenderTabState)
+
         if render_tab_state.preview_render:
             width = render_tab_state.render_width
             height = render_tab_state.render_height
@@ -35,6 +60,9 @@ def main(args, data):
             width = render_tab_state.viewer_width
             height = render_tab_state.viewer_height
 
+        if not gaussians.valid():
+            return np.zeros((height, width, 3), dtype=np.float32)
+        
         c2w = camera_state.c2w
         K = camera_state.get_K((width, height))
         c2w = torch.from_numpy(c2w).float().to("cuda")
@@ -42,11 +70,11 @@ def main(args, data):
         viewmat = c2w.inverse()
 
         render_colors, render_alphas, info = rasterization(
-            means,  # [N, 3]
-            quats,  # [N, 4]
-            scales,  # [N, 3]
-            opacities,  # [N]
-            colors,  # [N, S, 3]
+            gaussians.means,  # [N, 3]
+            gaussians.quats,  # [N, 4]
+            gaussians.scales,  # [N, 3]
+            gaussians.opacities,  # [N]
+            gaussians.colors,  # [N, S, 3]
             viewmat[None],  # [1, 4, 4]
             K[None],  # [1, 3, 3]
             width,
@@ -68,7 +96,8 @@ def main(args, data):
             with_ut=False,
             with_eval3d=False,
         )
-        render_tab_state.total_gaussian_count = len(means)
+
+        render_tab_state.total_gaussian_count = len(gaussians.means)
         render_tab_state.rendered_gaussian_count = (info["radii"] > 0).all(-1).sum().item()
 
         if render_tab_state.render_mode == "rgb":
@@ -98,26 +127,36 @@ def main(args, data):
             )
         return renders
     
-    server = viser.ViserServer(port=args.port)
-    _ = GaussianViewer(
+    server = viser.ViserServer(port=port)
+    viewer = GaussianViewer(
         server=server,
         render_fn=viewer_render_fn,
-        output_dir=Path(args.output_dir),
+        output_dir=Path("output/"),
         mode="rendering",
     )
 
+    def listen_for_updates():
+        while True:
+            snapshot = queue.get() # blocking call
+            if snapshot is None:   # stop signal
+                break
+
+            gaussians.update(snapshot)
+            viewer.rerender(None)
+
+    if queue is not None:
+        threading.Thread(target=listen_for_updates, daemon=True).start()
+
     print("Viewer running... Ctrl+C to exit.")
     while True: time.sleep(16.0)
-    
+
 
 if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("--port", type=int, default=8082)
-    parser.add_argument("--output_dir", type=str, required=True)
+    parser.add_argument("--ckpt", type=str, required=True)
     args = parser.parse_args()
 
     print("Loading checkpoint")
-    ckpt = torch.load(f"{args.output_dir}/submaps/000005.ckpt", map_location="cuda")
-    data = ckpt['gaussian_params']
-
-    main(args, data)
+    ckpt = torch.load(args.ckpt, map_location="cuda")
+    vis_slam(args.port, None, ckpt['gaussian_params'])

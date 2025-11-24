@@ -17,6 +17,7 @@ mapping:
   alpha_thre: 0.6
   pruning_thre: 0.1 
   submap_using_motion_heuristic: True
+  max_sh_degree: 0
 tracking:
   gt_camera: False
   w_color_loss: 0.95

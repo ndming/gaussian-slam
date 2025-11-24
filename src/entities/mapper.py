@@ -1,10 +1,12 @@
 """ This module includes the Mapper class, which is responsible scene mapping: Paragraph 3.2  """
-import time
+
 from argparse import ArgumentParser
 
+import time
 import numpy as np
 import torch
 import torchvision
+import torch.multiprocessing as mp
 
 from src.entities.arguments import OptimizationParams
 from src.entities.datasets import TUM_RGBD, BaseDataset, ScanNet
@@ -23,7 +25,7 @@ from src.utils.vis_utils import *  # noqa - needed for debugging
 
 
 class Mapper(object):
-    def __init__(self, config: dict, dataset: BaseDataset, logger: Logger) -> None:
+    def __init__(self, config: dict, dataset: BaseDataset, logger: Logger, queue: mp.Queue=None) -> None:
         """ Sets up the mapper parameters
         Args:
             config: configuration of the mapper
@@ -44,6 +46,7 @@ class Mapper(object):
         self.current_view_opt_iterations = config["current_view_opt_iterations"]
         self.opt = OptimizationParams(ArgumentParser(description="Training script parameters"))
         self.keyframes = []
+        self.queue = queue # optional queue to push Gaussians for visualization in another process
 
     def compute_seeding_mask(self, gaussian_model: GaussianModel, keyframe: dict, new_submap: bool) -> np.ndarray:
         """
@@ -153,14 +156,16 @@ class Mapper(object):
             with torch.no_grad():
 
                 if iteration == iterations // 2 or iteration == iterations:
-                    prune_mask = (gaussian_model.get_opacity()
-                                  < self.pruning_thre).squeeze()
+                    prune_mask = (gaussian_model.get_opacity() < self.pruning_thre).squeeze()
                     gaussian_model.prune_points(prune_mask)
 
                 # Optimizer step
                 if iteration < iterations:
                     gaussian_model.optimizer.step()
                 gaussian_model.optimizer.zero_grad(set_to_none=True)
+
+                # Visualise the optimization for the current iteration
+                self._submit_snapshot(gaussian_model)
 
             iteration += 1
         optimization_time = time.time() - start_time
@@ -228,6 +233,7 @@ class Mapper(object):
         filter_cloud = isinstance(self.dataset, (TUM_RGBD, ScanNet)) and not is_new_submap
 
         new_pts_num = self.grow_submap(gt_depth, estimate_c2w, gaussian_model, pts, filter_cloud)
+        self._submit_snapshot(gaussian_model)
 
         max_iterations = self.iterations
         if is_new_submap:
@@ -240,21 +246,39 @@ class Mapper(object):
         self.keyframes.append((frame_id, keyframe))
 
         # Visualise the mapping for the current frame
-        with torch.no_grad():
-            render_pkg_vis = render_gaussian_model(gaussian_model, keyframe["render_settings"])
-            image_vis, depth_vis = render_pkg_vis["color"], render_pkg_vis["depth"]
-            psnr_value = calc_psnr(image_vis, keyframe["color"]).mean().item()
-            opt_dict["psnr_render"] = psnr_value
-            print(f"PSNR this frame: {psnr_value}")
-            self.logger.vis_mapping_iteration(
-                frame_id, max_iterations,
-                image_vis.clone().detach().permute(1, 2, 0),
-                depth_vis.clone().detach().permute(1, 2, 0),
-                keyframe["color"].permute(1, 2, 0),
-                keyframe["depth"].unsqueeze(-1),
-                seeding_mask=seeding_mask)
+        # with torch.no_grad():
+        #     render_pkg_vis = render_gaussian_model(gaussian_model, keyframe["render_settings"])
+        #     image_vis, depth_vis = render_pkg_vis["color"], render_pkg_vis["depth"]
+        #     psnr_value = calc_psnr(image_vis, keyframe["color"]).mean().item()
+        #     opt_dict["psnr_render"] = psnr_value
+        #     print(f"PSNR this frame: {psnr_value}")
+        #     self.logger.vis_mapping_iteration(
+        #         frame_id, max_iterations,
+        #         image_vis.clone().detach().permute(1, 2, 0),
+        #         depth_vis.clone().detach().permute(1, 2, 0),
+        #         keyframe["color"].permute(1, 2, 0),
+        #         keyframe["depth"].unsqueeze(-1),
+        #         seeding_mask=seeding_mask)
 
         # Log the mapping numbers for the current frame
         self.logger.log_mapping_iteration(frame_id, new_pts_num, gaussian_model.get_size(),
                                           optimization_time/max_iterations, opt_dict)
         return opt_dict
+    
+    @torch.no_grad()
+    def _submit_snapshot(self, gaussian_model: GaussianModel):
+        """ Submits the current Gaussian model to the multiprocessing queue for visualization in another process.
+        Args:
+            gaussian_model: The current GaussianModel instance to be visualized.
+        """
+        if self.queue is None:
+            return
+        
+        snapshot = {
+            "means": gaussian_model.get_xyz().detach().cpu(),
+            "quats": gaussian_model.get_rotation().detach().cpu(),
+            "scales": gaussian_model.get_scaling().detach().cpu(),
+            "colors": gaussian_model.get_features_dc().detach().cpu(),
+            "opacities": gaussian_model.get_opacity().detach().cpu(),
+        }
+        self.queue.put(snapshot)
