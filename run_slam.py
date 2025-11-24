@@ -108,11 +108,11 @@ if __name__ == "__main__":
     gslam = GaussianSLAM(config)
     gslam.run()
 
-    evaluator = Evaluator(gslam.output_path, gslam.output_path / "config.yaml")
-    evaluator.run()
-    if config["use_wandb"]:
-        evals = ["rendering_metrics.json",
-                 "reconstruction_metrics.json", "ate_aligned.json"]
-        log_metrics_to_wandb(evals, gslam.output_path, "Evaluation")
-        wandb.finish()
+    # evaluator = Evaluator(gslam.output_path, gslam.output_path / "config.yaml")
+    # evaluator.run()
+    # if config["use_wandb"]:
+    #     evals = ["rendering_metrics.json",
+    #              "reconstruction_metrics.json", "ate_aligned.json"]
+    #     log_metrics_to_wandb(evals, gslam.output_path, "Evaluation")
+    #     wandb.finish()
     print("All done.✨")

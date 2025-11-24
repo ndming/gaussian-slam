@@ -148,7 +148,7 @@ class Evaluator(object):
                     "rendering_metrics.png"), dpi=300)
         print(metrics)
 
-    def run_reconstruction_eval(self):
+    def run_reconstruction_eval(self, cull_data_dir):
         """ Reconstructs the mesh, evaluates it, render novel view depth maps from it, and evaluates them as well """
         print("Running reconstruction evaluation...")
         if self.config["dataset_name"] != "replica":
@@ -203,8 +203,8 @@ class Evaluator(object):
         file_name = self.checkpoint_path / "mesh" / "final_mesh.ply"
         o3d.io.write_triangle_mesh(str(file_name), o3d_mesh)
         evaluate_reconstruction(file_name,
-                                f"data/Replica-SLAM/cull_replica/{self.scene_name}.ply",
-                                f"data/Replica-SLAM/cull_replica/{self.scene_name}_pc_unseen.npy",
+                                cull_data_dir / f"{self.scene_name}.ply",
+                                cull_data_dir / f"{self.scene_name}_pc_unseen.npy",
                                 self.checkpoint_path)
 
     def run_global_map_eval(self):
@@ -246,7 +246,7 @@ class Evaluator(object):
         print(f"PSNR List: {psnr_list}")
         print(f"Avg. NVS PSNR: {np.array(psnr_list).mean()}")
 
-    def run(self):
+    def run(self, cull_data_dir):
         """ Runs the general evaluation flow """
 
         print("Starting evaluation...🍺")
@@ -264,7 +264,7 @@ class Evaluator(object):
             traceback.print_exc()
 
         try:
-            self.run_reconstruction_eval()
+            self.run_reconstruction_eval(cull_data_dir)
         except Exception:
             print("Could not run reconstruction eval")
             traceback.print_exc()

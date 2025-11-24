@@ -1,5 +1,5 @@
 inherit_from: configs/Replica/replica.yaml
 data:
-  scene_name: room_1
-  input_path: /home/minhnd59/datasets/replica-slam/room1/
+  scene_name: room1
+  input_path: /home/minhnd59/datasets/replica/room1/
   output_path: output/replica/room_1/

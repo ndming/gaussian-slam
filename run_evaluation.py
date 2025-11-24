@@ -7,6 +7,7 @@ def get_args():
     parser = argparse.ArgumentParser(description='Arguments to compute the mesh')
     parser.add_argument('--checkpoint_path', type=str, help='SLAM checkpoint path', default="output/slam/full_experiment/")
     parser.add_argument('--config_path', type=str, help='Config path', default="")
+    parser.add_argument('--cull_data_dir', type=str, help='Replica cull data directory', default="data/replica/cull_replica")
     return parser.parse_args()
 
 
@@ -16,4 +17,4 @@ if __name__ == "__main__":
         args.config_path = Path(args.checkpoint_path) / "config.yaml"
 
     evaluator = Evaluator(Path(args.checkpoint_path), Path(args.config_path))
-    evaluator.run()
+    evaluator.run(Path(args.cull_data_dir))
