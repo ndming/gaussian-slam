@@ -13,7 +13,6 @@ def main(args, queue):
     p_view.start()
 
     p_slam.join()
-    queue.put(None) # signal the viewer to stop
     p_view.join()
 
 

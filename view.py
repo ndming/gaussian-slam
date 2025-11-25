@@ -141,7 +141,9 @@ def vis_slam(port, queue, ckpt=None):
             if snapshot is None:   # stop signal
                 break
 
-            gaussians.update(snapshot)
+            with viewer.lock:
+                gaussians.update(snapshot)
+
             viewer.rerender(None)
 
     if queue is not None:

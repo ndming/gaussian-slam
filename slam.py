@@ -14,4 +14,8 @@ def run_slam(config_path, queue):
 
     gslam = GaussianSLAM(config, queue)
     gslam.run()
+
+    queue.put(None)     # signal consumers to exit
+    queue.close()       # close the queue endpoint
+    queue.join_thread() # flush the queue
     
