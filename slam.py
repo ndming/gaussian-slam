@@ -18,4 +18,7 @@ def run_slam(config_path, queue):
     queue.put(None)     # signal consumers to exit
     queue.close()       # close the queue endpoint
     queue.join_thread() # flush the queue
+
+    print("SLAM process finished.")
+    print("Viewer is still running, please terminate it manually via Ctrl+C.")
     
