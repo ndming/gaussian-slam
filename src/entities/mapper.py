@@ -164,10 +164,10 @@ class Mapper(object):
                     gaussian_model.optimizer.step()
                 gaussian_model.optimizer.zero_grad(set_to_none=True)
 
-                # Visualise the optimization for the current iteration
-                self._submit_snapshot(gaussian_model)
-
             iteration += 1
+        # Visualise the optimization for the current iteration
+        self._submit_snapshot(gaussian_model)
+
         optimization_time = time.time() - start_time
         losses_dict["optimization_time"] = optimization_time
         losses_dict["optimization_iter_time"] = optimization_time / iterations

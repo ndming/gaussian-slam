@@ -13,11 +13,13 @@ from src.entities.datasets import get_dataset
 from src.evaluation.evaluator import filter_depth_outliers
 from src.utils.io_utils import load_config
 from src.utils.utils import setup_seed, torch2np, render_gaussian_model, get_render_settings
+from src.utils.validation import compare_depth_scale
 
 if __name__ == "__main__":
     parser = ArgumentParser(description="Fuse depth maps into a 3D mesh")
     parser.add_argument("-m", "--model_dir", type=str, required=True)
     parser.add_argument("-s", "--use_label", action="store_true", help="Whether to use semantic labels during fusion")
+    parser.add_argument("-v", "--val_depth", action="store_true", help="Whether to validate rendered depth with GT depth")
     args = parser.parse_args()
 
     model_dir = Path(args.model_dir)
@@ -25,6 +27,9 @@ if __name__ == "__main__":
 
     mesh_dir = model_dir / "mesh"
     mesh_dir.mkdir(exist_ok=True)
+
+    depth_dir = model_dir / "depth"
+    depth_dir.mkdir(exist_ok=True)
 
     config = load_config(config_file.as_posix())
     setup_seed(config["seed"])
@@ -46,7 +51,7 @@ if __name__ == "__main__":
     camera_poses = torch2np(torch.load(model_dir / "estimated_c2w.ckpt", map_location="cuda"))
     submap_paths = sorted(list((model_dir / "submaps").glob('*')))
 
-    for submap_path in tqdm(submap_paths, desc="Fusing submaps"):
+    for submap_path in tqdm(submap_paths, desc="Fusing submaps", ncols=120):
         submap = torch.load(submap_path, map_location="cuda")
         gaussian_model = GaussianModel()
         gaussian_model.training_setup(opt_settings)
@@ -59,9 +64,13 @@ if __name__ == "__main__":
             render_dict = render_gaussian_model(
                 gaussian_model, get_render_settings(dataset.width, dataset.height, dataset.intrinsics, estimate_w2c))
             
-            rendered_depth = render_dict["depth"][0].detach()
-            rendered_depth = torch2np(rendered_depth)
+            rendered_depth = render_dict["depth"][0].detach().cpu().numpy() # (H, W)
             rendered_depth = filter_depth_outliers(rendered_depth, kernel_size=20, threshold=0.1)
+
+            if args.val_depth:
+                gt_depth = dataset.load_depth_map(keyframe_id)
+                stats = compare_depth_scale(gt_depth, rendered_depth)
+                tqdm.write(f"Keyframe {keyframe_id:>4d}: Scale={stats['scale_factor']:.4f}, RMSE={stats['rmse']:.4f} over {stats['num_valid_pixels']} pixels")
 
             depth_image_o3d = o3d.geometry.Image(rendered_depth)
             color_image_o3d = None

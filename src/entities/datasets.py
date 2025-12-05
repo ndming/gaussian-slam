@@ -71,6 +71,12 @@ class Replica(BaseDataset):
 
     def load_label_map(self, index):
         return self.label_maps[index]
+    
+    def load_depth_map(self, index):
+        depth_data = cv2.imread(
+            str(self.depth_paths[index]), cv2.IMREAD_UNCHANGED)
+        depth_data = depth_data.astype(np.float32) / self.depth_scale
+        return depth_data
 
     def __getitem__(self, index):
         color_data = cv2.imread(str(self.color_paths[index]))
