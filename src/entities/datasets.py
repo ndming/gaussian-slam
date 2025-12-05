@@ -48,10 +48,16 @@ class Replica(BaseDataset):
 
     def __init__(self, dataset_config: dict):
         super().__init__(dataset_config)
-        self.color_paths = sorted(
-            list((self.dataset_path / "results").glob("frame*.jpg")))
-        self.depth_paths = sorted(
-            list((self.dataset_path / "results").glob("depth*.png")))
+        self.color_paths = sorted(list((self.dataset_path / "results").glob("frame*.jpg")))
+        self.depth_paths = sorted(list((self.dataset_path / "results").glob("depth*.png")))
+
+        label_paths = sorted(list((self.dataset_path / "results").glob("frame*_pred.png")))
+        self.label_maps = []
+        for label_path in label_paths:
+            label_map = cv2.imread(str(label_path))
+            label_map = cv2.cvtColor(label_map, cv2.COLOR_BGR2RGB)
+            self.label_maps.append(label_map)
+
         self.load_poses(self.dataset_path / "traj.txt")
         print(f"Loaded {len(self.color_paths)} frames")
 
@@ -62,6 +68,9 @@ class Replica(BaseDataset):
         for line in lines:
             c2w = np.array(list(map(float, line.split()))).reshape(4, 4)
             self.poses.append(c2w.astype(np.float32))
+
+    def load_label_map(self, index):
+        return self.label_maps[index]
 
     def __getitem__(self, index):
         color_data = cv2.imread(str(self.color_paths[index]))
