@@ -1,0 +1,5 @@
+inherit_from: configs/vinmotion/vinmotion.yaml
+data:
+  scene_name: vmo_hall
+  input_path: /home/minhnd59/datasets/vinmotion/vmo_hall/
+  output_path: output/vinmotion/vmo_hall/

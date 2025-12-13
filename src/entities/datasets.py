@@ -273,6 +273,26 @@ class ScanNetPP(BaseDataset):
         return index, color_data, depth_data, self.poses[index]
 
 
+class VinMotion(BaseDataset):
+    def __init__(self, dataset_config: dict):
+        super().__init__(dataset_config)
+
+        self.color_paths = sorted(list(self.dataset_path.glob("rgb_*.jpg")))
+        self.depth_paths = sorted(list(self.dataset_path.glob("depth_*.png")))
+        print(f"Loaded {len(self.color_paths)} color images")
+        print(f"Loaded {len(self.depth_paths)} depth maps")
+
+    def load_poses(self, _):
+        self.poses = []
+
+    def __getitem__(self, index):
+        color_data = cv2.imread(str(self.color_paths[index]))
+        color_data = cv2.cvtColor(color_data, cv2.COLOR_BGR2RGB)
+        depth_data = cv2.imread(str(self.depth_paths[index]), cv2.IMREAD_UNCHANGED)
+        depth_data = depth_data.astype(np.float32) / self.depth_scale
+        return index, color_data, depth_data, np.eye(4, 4)
+
+
 def get_dataset(dataset_name: str):
     if dataset_name == "replica":
         return Replica
@@ -282,4 +302,6 @@ def get_dataset(dataset_name: str):
         return ScanNet
     elif dataset_name == "scannetpp":
         return ScanNetPP
+    elif dataset_name == "vinmotion":
+        return VinMotion
     raise NotImplementedError(f"Dataset {dataset_name} not implemented")
