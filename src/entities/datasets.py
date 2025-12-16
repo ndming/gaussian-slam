@@ -273,25 +273,112 @@ class ScanNetPP(BaseDataset):
         return index, color_data, depth_data, self.poses[index]
 
 
+from scipy.spatial.transform import Rotation as R
+
+def _pose_to_matrix(xyz, quat):
+    T = np.eye(4, dtype=np.float32)
+    T[:3, :3] = R.from_quat(quat).as_matrix()
+    T[:3, 3] = xyz
+    return T
+
+
 class VinMotion(BaseDataset):
     def __init__(self, dataset_config: dict):
         super().__init__(dataset_config)
+        self.skip_first = 256
 
-        self.color_paths = sorted(list(self.dataset_path.glob("rgb_*.jpg")))
-        self.depth_paths = sorted(list(self.dataset_path.glob("depth_*.png")))
-        print(f"Loaded {len(self.color_paths)} color images")
-        print(f"Loaded {len(self.depth_paths)} depth maps")
+        self.rgb_dir = self.dataset_path / "rgb"
+        self.depth_dir = self.dataset_path / "depth"
+        self.pose_file = self.dataset_path / "poses" / "result.txt"
+        self.time_file = self.dataset_path / "times.txt"
 
-    def load_poses(self, _):
-        self.poses = []
+        self.pose_dict = self.load_poses(self.pose_file)
+        self.time_dict = self.load_times(self.time_file)
+
+        self.frames = []
+        for file_ts, (pose_ts, exposure) in self.time_dict.items():
+            rgb_path = self.rgb_dir / f"{file_ts}.jpg"
+            depth_path = self.depth_dir / f"{file_ts}.png"
+
+            if not rgb_path.exists() or not depth_path.exists():
+                print(f"Warning: missing rgb/depth for timestamp {file_ts}")
+                continue
+            if pose_ts not in self.pose_dict:
+                print(f"Warning: missing pose for timestamp {pose_ts}")
+                continue
+
+            self.frames.append(
+                (file_ts, rgb_path, depth_path, pose_ts, exposure)
+            )
+
+        # Sort by file timestamp (capture order)
+        self.frames.sort(key=lambda x: x[0])
+        # Skip first N frames
+        self.frames = self.frames[self.skip_first:]
+        print(f"Loaded {len(self.frames)} synchronized frames")
+
+        self.ref_exposure = np.median([f[4] for f in self.frames])
+
+        # self.color_paths = sorted(list(self.dataset_path.glob("rgb_*.jpg")))[self.skip_first:]
+        # self.depth_paths = sorted(list(self.dataset_path.glob("depth_*.png")))[self.skip_first:]
+        # print(f"Loaded {len(self.color_paths)} color images")
+        # print(f"Loaded {len(self.depth_paths)} depth maps")
+
+    def __len__(self):
+        return len(self.frames)
+
+    def load_poses(self, path):
+        pose_dict = {}
+
+        with open(path, "r") as f:
+            for line in f:
+                if not line.strip():
+                    continue
+
+                vals = list(map(float, line.split()))
+                pose_ts = vals[0]
+                # print(f"Loading pose for timestamp {pose_ts}")
+                xyz = vals[1:4]
+                quat = vals[4:8]  # x y z w
+
+                pose_dict[pose_ts] = _pose_to_matrix(xyz, quat)
+
+        return pose_dict
+
+    def load_times(self, times_path):
+        """
+        file_ts (int) -> (pose_ts (float), exposure (float))
+        """
+        time_map = {}
+
+        with open(times_path, "r") as f:
+            for line in f:
+                if not line.strip():
+                    continue
+
+                file_ts_str, pose_ts_str, exposure_str = line.split()
+                file_ts = int(file_ts_str)
+                pose_ts = round(float(pose_ts_str), 5)
+                exposure = float(exposure_str)
+
+                time_map[file_ts] = (pose_ts, exposure)
+        return time_map
 
     def __getitem__(self, index):
-        color_data = cv2.imread(str(self.color_paths[index]))
-        color_data = cv2.cvtColor(color_data, cv2.COLOR_BGR2RGB)
-        depth_data = cv2.imread(str(self.depth_paths[index]), cv2.IMREAD_UNCHANGED)
-        depth_data = depth_data.astype(np.float32) / self.depth_scale
-        return index, color_data, depth_data, np.eye(4, 4)
+        file_ts, rgb_path, depth_path, pose_ts, exposure = self.frames[index]
 
+        color = cv2.imread(str(rgb_path))
+        color = cv2.cvtColor(color, cv2.COLOR_BGR2RGB)
+        color = color.astype(np.float32)
+        scale = self.ref_exposure / exposure
+        color *= scale
+        color = np.clip(color, 0, 255).astype(np.uint8)
+
+        depth = cv2.imread(str(depth_path), cv2.IMREAD_UNCHANGED)
+        depth = depth.astype(np.float32) / self.depth_scale
+
+        pose = self.pose_dict[pose_ts]
+        return index, color, depth, pose
 
 def get_dataset(dataset_name: str):
     if dataset_name == "replica":

@@ -1,0 +1,5 @@
+inherit_from: configs/vinmotion/vinmotion.yaml
+data:
+  scene_name: perception_desk
+  input_path: /home/minhnd59/datasets/vinmotion/perception_desk/
+  output_path: output/vinmotion/perception_desk/
